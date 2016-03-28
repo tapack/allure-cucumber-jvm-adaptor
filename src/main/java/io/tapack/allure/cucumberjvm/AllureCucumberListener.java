@@ -99,7 +99,7 @@ public class AllureCucumberListener extends RunListener {
      * @return {@link List<Description>} test classes description list
      * @throws IllegalAccessException
      */
-    public List<Description> findTestClassesLevel(List<Description> description) throws IllegalAccessException {
+    private List<Description> findTestClassesLevel(List<Description> description) throws IllegalAccessException {
         if (description.isEmpty()) {
             return new ArrayList<>();
         }
@@ -208,7 +208,7 @@ public class AllureCucumberListener extends RunListener {
         return "Feature: Undefined Feature";
     }
 
-    public void testSuiteStarted(Description description, String suiteName, String scenarioName) throws IllegalAccessException {
+    private void testSuiteStarted(Description description, String suiteName, String scenarioName) throws IllegalAccessException {
 
         String[] annotationParams = findFeatureByScenarioName(scenarioName);
 
@@ -243,48 +243,6 @@ public class AllureCucumberListener extends RunListener {
         getLifecycle().fire(event);
     }
 
-    /**
-     * Creates Story annotation object
-     *
-     * @param value story names array
-     * @return Story annotation object
-     */
-    Stories getStoriesAnnotation(final String[] value) {
-        return new Stories() {
-
-            @Override
-            public String[] value() {
-                return value;
-            }
-
-            @Override
-            public Class<Stories> annotationType() {
-                return Stories.class;
-            }
-        };
-    }
-
-    /**
-     * Creates Feature annotation object
-     *
-     * @param value feature names array
-     * @return Feature annotation object
-     */
-    Features getFeaturesAnnotation(final String[] value) {
-        return new Features() {
-
-            @Override
-            public String[] value() {
-                return value;
-            }
-
-            @Override
-            public Class<Features> annotationType() {
-                return Features.class;
-            }
-        };
-    }
-
     @Override
     public void testStarted(Description description) throws IllegalAccessException {
 
@@ -295,7 +253,6 @@ public class AllureCucumberListener extends RunListener {
                     || description.getDisplayName().endsWith("|")) {
                 methodName = findNameByScenarioName(methodName) + methodName;
             }
-//            methodName = methodName.split(":")[1].trim();
             methodName = methodName.replaceFirst("^(.*): ", "");
             TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), methodName);
             event.setTitle(methodName);
@@ -320,11 +277,16 @@ public class AllureCucumberListener extends RunListener {
 
     @Override
     public void testFailure(Failure failure) {
+        Throwable throwable = failure.getException();
         if (failure.getDescription().isTest()) {
-            getLifecycle().fire(new StepFailureEvent().withThrowable(failure.getException()));
+            getLifecycle().fire(new StepFailureEvent().withThrowable(throwable));
         } else {
             // Produces additional failure step for all test case
-            fireTestCaseFailure(failure.getException());
+            if (throwable instanceof AssumptionViolatedException) {
+                getLifecycle().fire(new TestCaseCanceledEvent().withThrowable(throwable));
+            } else {
+                getLifecycle().fire(new TestCaseFailureEvent().withThrowable(throwable));
+            }
         }
     }
 
@@ -335,27 +297,25 @@ public class AllureCucumberListener extends RunListener {
 
     @Override
     public void testIgnored(Description description) throws IllegalAccessException {
-        if (description.isSuite()) {
-//            startFakeTestCase(description);
-            getLifecycle().fire(new TestCasePendingEvent().withMessage(getIgnoredMessage(description)));
-//            finishFakeTestCase();
-        } else {
+        if (description.isTest()) {
             String stepName = extractMethodName(description);
             getLifecycle().fire(new StepStartedEvent(stepName).withTitle(stepName));
             getLifecycle().fire(new StepCanceledEvent());
             getLifecycle().fire(new StepFinishedEvent());
+        } else {
+            getLifecycle().fire(new TestCasePendingEvent().withMessage(getIgnoredMessage(description)));
         }
     }
 
     @Override
     public void testFinished(Description description) throws IllegalAccessException {
-        if (description.isSuite()) {
+        if (description.isTest()) {
+            getLifecycle().fire(new StepFinishedEvent());
+        } else {
             getLifecycle().fire(new TestCaseFinishedEvent());
             if (isLastScenario(description)) {
-                testSuiteFinished(getSuiteUid(description));
+                getLifecycle().fire(new TestSuiteFinishedEvent(getSuiteUid(description)));
             }
-        } else {
-            getLifecycle().fire(new StepFinishedEvent());
         }
     }
 
@@ -419,11 +379,7 @@ public class AllureCucumberListener extends RunListener {
         return false;
     }
 
-    public void testSuiteFinished(String uid) {
-        getLifecycle().fire(new TestSuiteFinishedEvent(uid));
-    }
-
-    public String generateSuiteUid(String suiteName) {
+    private String generateSuiteUid(String suiteName) {
         String uid = UUID.randomUUID().toString();
         synchronized (getSuites()) {
             getSuites().put(suiteName, uid);
@@ -431,7 +387,7 @@ public class AllureCucumberListener extends RunListener {
         return uid;
     }
 
-    public String getSuiteUid(Description description) throws IllegalAccessException {
+    private String getSuiteUid(Description description) throws IllegalAccessException {
         String scenarioName = description.getClassName();
         String suiteName = findFeatureByScenario(description);
         if (!description.isSuite()) {
@@ -445,51 +401,16 @@ public class AllureCucumberListener extends RunListener {
         return getSuites().get(suiteName);
     }
 
-    public String getIgnoredMessage(Description description) {
-        Ignore ignore = description.getAnnotation(Ignore.class
-        );
-        return ignore
-                == null || ignore.value()
-                .isEmpty() ? "Step is not implemented yet!" : ignore.value();
+    private String getIgnoredMessage(Description description) {
+        Ignore ignore = description.getAnnotation(Ignore.class);
+        return ignore == null || ignore.value().isEmpty() ? "Step is not implemented yet!" : ignore.value();
     }
 
-    public void startFakeTestCase(Description description) throws IllegalAccessException {
-        String uid = getSuiteUid(description);
-
-        String name = description.isTest() ? description.getMethodName() : description.getClassName();
-        TestCaseStartedEvent event = new TestCaseStartedEvent(uid, name);
-        event.setTitle(name);
-        AnnotationManager am = new AnnotationManager(description.getAnnotations());
-        am.update(event);
-
-        getLifecycle().fire(event);
-    }
-
-    public void finishFakeTestCase() {
-        getLifecycle().fire(new TestCaseFinishedEvent());
-    }
-
-    public void fireTestCaseFailure(Throwable throwable) {
-        if (throwable instanceof AssumptionViolatedException) {
-            getLifecycle().fire(new TestCaseCanceledEvent().withThrowable(throwable));
-        } else {
-            getLifecycle().fire(new TestCaseFailureEvent().withThrowable(throwable));
-        }
-    }
-
-    public void fireClearStepStorage() {
-        getLifecycle().fire(new ClearStepStorageEvent());
-    }
-
-    public Allure getLifecycle() {
+    private Allure getLifecycle() {
         return lifecycle;
     }
 
-    public void setLifecycle(Allure lifecycle) {
-        this.lifecycle = lifecycle;
-    }
-
-    public Map<String, String> getSuites() {
+    private Map<String, String> getSuites() {
         return suites;
     }
 
@@ -511,6 +432,48 @@ public class AllureCucumberListener extends RunListener {
             return matcher.group(1);
         }
         return description.getMethodName();
+    }
+
+    /**
+     * Creates Story annotation object
+     *
+     * @param value story names array
+     * @return Story annotation object
+     */
+    private Stories getStoriesAnnotation(final String[] value) {
+        return new Stories() {
+
+            @Override
+            public String[] value() {
+                return value;
+            }
+
+            @Override
+            public Class<Stories> annotationType() {
+                return Stories.class;
+            }
+        };
+    }
+
+    /**
+     * Creates Feature annotation object
+     *
+     * @param value feature names array
+     * @return Feature annotation object
+     */
+    private Features getFeaturesAnnotation(final String[] value) {
+        return new Features() {
+
+            @Override
+            public String[] value() {
+                return value;
+            }
+
+            @Override
+            public Class<Features> annotationType() {
+                return Features.class;
+            }
+        };
     }
 }
 
