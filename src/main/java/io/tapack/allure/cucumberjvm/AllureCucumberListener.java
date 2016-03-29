@@ -251,7 +251,7 @@ public class AllureCucumberListener extends RunListener {
             //If it`s Scenario Outline, add example string to story name
             if (methodName.startsWith("|")
                     || description.getDisplayName().endsWith("|")) {
-                methodName = findNameByScenarioName(methodName) + methodName;
+                methodName = getScenarioOutlineName(description) + methodName;
             }
             methodName = methodName.replaceFirst("^(.*): ", "");
             TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), methodName);
@@ -319,34 +319,23 @@ public class AllureCucumberListener extends RunListener {
         }
     }
 
-    private String findNameByScenarioName(String scenarioName) throws IllegalAccessException {
-        List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
-
-        for (Description testClass : testClasses) {
-
-            List<Description> features = findFeaturesLevel(testClass.getChildren());
-            //Feature cycle
-            for (Description feature : features) {
-                //Story cycle
-                for (Description story : feature.getChildren()) {
-                    Object scenarioType = getTestEntityType(story);
-                    if (scenarioType instanceof ScenarioOutline) {
-                        List<Description> examples = story.getChildren().get(0).getChildren();
-                        // we need to go deeper :)
-                        for (Description example : examples) {
-                            if (example.getDisplayName().equals(scenarioName)) {
-                                return story.getDisplayName();
-                            }
-                        }
-                    }
-                }
-            }
+    private String getScenarioOutlineName(Description description) throws IllegalAccessException {
+        Object testEntityType = getTestEntityType(description);
+        if (testEntityType instanceof Scenario) {
+            return ((Scenario) testEntityType).getName();
         }
-        return "Scenario Outline: Undefined Scenario";
+        return "Undefined Scenario Outline";
     }
 
     private boolean isLastScenario(Description description) throws IllegalAccessException {
-        String scenarioName = description.getClassName();
+
+        String scenarioToFindId = description.getClassName();
+        Object scenarioToFindType = getTestEntityType(description);
+        if (scenarioToFindType instanceof Scenario) {
+            scenarioToFindId = ((Scenario) scenarioToFindType).getId();
+        }
+
+        List<String> lastScenariosIds = new ArrayList<>();
         List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
 
         for (Description testClass : testClasses) {
@@ -354,29 +343,22 @@ public class AllureCucumberListener extends RunListener {
             List<Description> features = findFeaturesLevel(testClass.getChildren());
             //Feature cycle
             for (Description feature : features) {
-                //Story cycle
-                for (Description story : feature.getChildren()) {
-                    Object scenarioType = getTestEntityType(story);
+                Description lastScenarioDescription = feature.getChildren().get(feature.getChildren().size() - 1);
+                Object scenarioType = getTestEntityType(lastScenarioDescription);
 
-                    //Scenario
-                    if (scenarioType instanceof Scenario
-                            && story.getDisplayName().equals(scenarioName)) {
-                        return feature.getChildren().get(feature.getChildren().size() - 1).equals(story);
-
-                        //Scenario Outline
-                    } else if (scenarioType instanceof ScenarioOutline) {
-                        List<Description> examples = story.getChildren().get(0).getChildren();
-                        // we need to go deeper :)
-                        for (Description example : examples) {
-                            if (example.getDisplayName().equals(scenarioName)) {
-                                return feature.getChildren().get(feature.getChildren().size() - 1).equals(story) && examples.get(examples.size() - 1).equals(example);
-                            }
-                        }
+                if (scenarioType instanceof Scenario) {
+                    lastScenariosIds.add(((Scenario) scenarioType).getId());
+                } else if (scenarioType instanceof ScenarioOutline) {
+                    ArrayList<Description> examples = lastScenarioDescription.getChildren().get(0).getChildren();
+                    Description lastExample = examples.get(examples.size() - 1);
+                    Object exampleType = getTestEntityType(lastExample);
+                    if (exampleType instanceof Scenario) {
+                        lastScenariosIds.add(((Scenario) exampleType).getId());
                     }
                 }
             }
         }
-        return false;
+        return lastScenariosIds.contains(scenarioToFindId);
     }
 
     private String generateSuiteUid(String suiteName) {
