@@ -214,14 +214,6 @@ public class AllureCucumberListener extends RunListener {
 
         //Create feature and story annotations. Remove unnecessary words from it
         Features feature = getFeaturesAnnotation(new String[]{annotationParams[0].split(":")[1].trim()});
-        Stories story = getStoriesAnnotation(new String[]{annotationParams[1].split(":")[1].trim()});
-
-        //If it`s Scenario Outline, add example string to story name
-        if (description.getDisplayName().startsWith("|")
-                || description.getDisplayName().endsWith("|")) {
-            story = getStoriesAnnotation(new String[]{annotationParams[1].split(":")[1].trim()
-                    + " " + description.getDisplayName()});
-        }
 
         String uid = generateSuiteUid(suiteName);
         TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, feature.value()[0]);
@@ -233,7 +225,6 @@ public class AllureCucumberListener extends RunListener {
         for (Annotation annotation : description.getAnnotations()) {
             annotations.add(annotation);
         }
-//        annotations.add(story);
         annotations.add(feature);
         AnnotationManager am = new AnnotationManager(annotations);
         am.update(event);
@@ -337,15 +328,11 @@ public class AllureCucumberListener extends RunListener {
 
         List<String> lastScenariosIds = new ArrayList<>();
         List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
-
         for (Description testClass : testClasses) {
-
             List<Description> features = findFeaturesLevel(testClass.getChildren());
-            //Feature cycle
             for (Description feature : features) {
                 Description lastScenarioDescription = feature.getChildren().get(feature.getChildren().size() - 1);
                 Object scenarioType = getTestEntityType(lastScenarioDescription);
-
                 if (scenarioType instanceof Scenario) {
                     lastScenariosIds.add(((Scenario) scenarioType).getId());
                 } else if (scenarioType instanceof ScenarioOutline) {
