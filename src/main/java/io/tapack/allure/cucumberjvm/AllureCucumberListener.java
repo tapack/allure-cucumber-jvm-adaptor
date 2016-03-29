@@ -123,47 +123,6 @@ public class AllureCucumberListener extends RunListener {
 
     }
 
-    /**
-     * Find feature and story for given scenario
-     *
-     * @param scenarioName
-     * @return {@link String[]} of ["<FEATURE_NAME>", "<STORY_NAME>"]s
-     * @throws IllegalAccessException
-     */
-    private String[] findFeatureByScenarioName(String scenarioName) throws IllegalAccessException {
-        List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
-
-        for (Description testClass : testClasses) {
-
-            List<Description> features = findFeaturesLevel(testClass.getChildren());
-            //Feature cycle
-            for (Description feature : features) {
-                //Story cycle
-                for (Description story : feature.getChildren()) {
-                    Object scenarioType = getTestEntityType(story);
-
-                    //Scenario
-                    if (scenarioType instanceof Scenario
-                            && story.getDisplayName().equals(scenarioName)) {
-                        return new String[]{feature.getDisplayName(), scenarioName};
-
-                        //Scenario Outline
-                    } else if (scenarioType instanceof ScenarioOutline) {
-                        List<Description> examples = story.getChildren().get(0).getChildren();
-                        // we need to go deeper :)
-                        for (Description example : examples) {
-                            if (example.getDisplayName().equals(scenarioName)) {
-                                return new String[]{feature.getDisplayName(), story.getDisplayName()};
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return new String[]{"Feature: Undefined Feature", scenarioName};
-    }
-
-
     private String findFeatureByScenario(Description scenario) throws IllegalAccessException {
         String scenarioToFindName = scenario.getClassName();
         String scenarioToFindId = scenarioToFindName;
@@ -209,16 +168,13 @@ public class AllureCucumberListener extends RunListener {
     }
 
     private void testSuiteStarted(Description description, String suiteName, String scenarioName) throws IllegalAccessException {
-
-        String[] annotationParams = findFeatureByScenarioName(scenarioName);
-
-        //Create feature and story annotations. Remove unnecessary words from it
-        Features feature = getFeaturesAnnotation(new String[]{annotationParams[0].split(":")[1].trim()});
-
+        //Create feature annotation. Remove unnecessary words from it
+        String featureName = suiteName.replaceFirst("^(.*): ", "");
+        Features feature = getFeaturesAnnotation(new String[]{featureName});
         String uid = generateSuiteUid(suiteName);
-        TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, feature.value()[0]);
 
-        event.setTitle(feature.value()[0]);
+        TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, featureName);
+        event.setTitle(featureName);
 
         //Add feature and story annotations
         Collection<Annotation> annotations = new ArrayList<>();
@@ -236,7 +192,6 @@ public class AllureCucumberListener extends RunListener {
 
     @Override
     public void testStarted(Description description) throws IllegalAccessException {
-
         if (description.isSuite()) {
             String methodName = description.getClassName();
             //If it`s Scenario Outline, add example string to story name
