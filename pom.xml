@@ -4,7 +4,7 @@
 
     <groupId>io.tapack</groupId>
     <artifactId>allure-cucumber-jvm-adaptor</artifactId>
-    <version>0.1-SNAPSHOT</version>
+    <version>0.1</version>
 
     <name>Allure Cucumber-JVM Adaptor</name>
 
@@ -20,7 +20,7 @@
         <url>https://github.com/tapack/allure-cucumber-jvm-adaptor</url>
         <connection>scm:git@github.com:tapack/allure-cucumber-jvm-adaptor.git</connection>
         <developerConnection>scm:git:git@github.com:tapack/allure-cucumber-jvm-adaptor.git</developerConnection>
-        <tag>HEAD</tag>
+        <tag>allure-cucumber-jvm-adaptor-0.1</tag>
     </scm>
 
     <issueManagement>
