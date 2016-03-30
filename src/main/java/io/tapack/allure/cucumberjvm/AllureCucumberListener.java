@@ -42,32 +42,28 @@ public class AllureCucumberListener extends RunListener {
 
     @Override
     public void testStarted(Description description) throws IllegalAccessException {
-        if (description.isSuite()) {
-            String methodName = description.getClassName();
+        if (description.isTest()) {
+            String stepName = extractMethodName(description);
+            getLifecycle().fire(new StepStartedEvent(stepName).withTitle(stepName));
+        } else {
+            String scenarioName = description.getClassName();
             //If it`s Scenario Outline, add example string to story name
-            if (methodName.startsWith("|")
+            if (scenarioName.startsWith("|")
                     || description.getDisplayName().endsWith("|")) {
-                methodName = getScenarioOutlineName(description) + methodName;
+                scenarioName = getScenarioOutlineName(description) + " " + scenarioName;
             }
-            methodName = methodName.replaceFirst("^(.*): ", "");
-            TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), methodName);
-            event.setTitle(methodName);
-
-            Stories story = getStoriesAnnotation(new String[]{methodName});
-
+            scenarioName = scenarioName.replaceFirst("^(.*): ", "");
+            TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), scenarioName);
+            event.setTitle(scenarioName);
+            Stories story = getStoriesAnnotation(new String[]{scenarioName});
             Collection<Annotation> annotations = new ArrayList<>();
             for (Annotation annotation : description.getAnnotations()) {
                 annotations.add(annotation);
             }
-
             annotations.add(story);
-
             AnnotationManager am = new AnnotationManager(annotations);
             am.update(event);
             getLifecycle().fire(event);
-        } else {
-            String stepName = extractMethodName(description);
-            getLifecycle().fire(new StepStartedEvent(stepName).withTitle(stepName));
         }
     }
 
@@ -317,16 +313,6 @@ public class AllureCucumberListener extends RunListener {
 
     private Map<String, String> getSuites() {
         return suites;
-    }
-
-    private String extractClassName(Description description) {
-        String displayName = description.getDisplayName();
-        Pattern pattern = Pattern.compile("\\(\\|(.*)\\|\\)");
-        Matcher matcher = pattern.matcher(displayName);
-        if (matcher.find()) {
-            return "|" + matcher.group(1) + "|";
-        }
-        return description.getClassName();
     }
 
     private String extractMethodName(Description description) {
