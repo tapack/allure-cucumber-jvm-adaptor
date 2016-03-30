@@ -167,26 +167,16 @@ public class AllureCucumberListener extends RunListener {
         return "Feature: Undefined Feature";
     }
 
-    private void testSuiteStarted(Description description, String suiteName, String scenarioName) throws IllegalAccessException {
+    private void testSuiteStarted(String suiteName) throws IllegalAccessException {
+        String uid = generateSuiteUid(suiteName);
         //Create feature annotation. Remove unnecessary words from it
         String featureName = suiteName.replaceFirst("^(.*): ", "");
         Features feature = getFeaturesAnnotation(new String[]{featureName});
-        String uid = generateSuiteUid(suiteName);
-
         TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, featureName);
         event.setTitle(featureName);
-
-        //Add feature and story annotations
-        Collection<Annotation> annotations = new ArrayList<>();
-        for (Annotation annotation : description.getAnnotations()) {
-            annotations.add(annotation);
-        }
-        annotations.add(feature);
-        AnnotationManager am = new AnnotationManager(annotations);
+        AnnotationManager am = new AnnotationManager(feature);
         am.update(event);
-
         event.withLabels(AllureModelUtils.createTestFrameworkLabel("CucumberJVM"));
-
         getLifecycle().fire(event);
     }
 
@@ -274,14 +264,11 @@ public class AllureCucumberListener extends RunListener {
     }
 
     private boolean isLastScenario(Description description) throws IllegalAccessException {
+        return getLastScenarioIds().contains(getScenarioId(description));
+    }
 
-        String scenarioToFindId = description.getClassName();
-        Object scenarioToFindType = getTestEntityType(description);
-        if (scenarioToFindType instanceof Scenario) {
-            scenarioToFindId = ((Scenario) scenarioToFindType).getId();
-        }
-
-        List<String> lastScenariosIds = new ArrayList<>();
+    private List<String> getLastScenarioIds() throws IllegalAccessException {
+        List<String> ids = new ArrayList<>();
         List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
         for (Description testClass : testClasses) {
             List<Description> features = findFeaturesLevel(testClass.getChildren());
@@ -289,18 +276,27 @@ public class AllureCucumberListener extends RunListener {
                 Description lastScenarioDescription = feature.getChildren().get(feature.getChildren().size() - 1);
                 Object scenarioType = getTestEntityType(lastScenarioDescription);
                 if (scenarioType instanceof Scenario) {
-                    lastScenariosIds.add(((Scenario) scenarioType).getId());
+                    ids.add(((Scenario) scenarioType).getId());
                 } else if (scenarioType instanceof ScenarioOutline) {
                     ArrayList<Description> examples = lastScenarioDescription.getChildren().get(0).getChildren();
                     Description lastExample = examples.get(examples.size() - 1);
                     Object exampleType = getTestEntityType(lastExample);
                     if (exampleType instanceof Scenario) {
-                        lastScenariosIds.add(((Scenario) exampleType).getId());
+                        ids.add(((Scenario) exampleType).getId());
                     }
                 }
             }
         }
-        return lastScenariosIds.contains(scenarioToFindId);
+        return ids;
+    }
+
+    private String getScenarioId(Description description) throws IllegalAccessException {
+        String id = description.getClassName();
+        Object scenarioToFindType = getTestEntityType(description);
+        if (scenarioToFindType instanceof Scenario) {
+            id = ((Scenario) scenarioToFindType).getId();
+        }
+        return id;
     }
 
     private String generateSuiteUid(String suiteName) {
@@ -312,15 +308,9 @@ public class AllureCucumberListener extends RunListener {
     }
 
     private String getSuiteUid(Description description) throws IllegalAccessException {
-        String scenarioName = description.getClassName();
         String suiteName = findFeatureByScenario(description);
-        if (!description.isSuite()) {
-            suiteName = extractClassName(description);
-        }
         if (!getSuites().containsKey(suiteName)) {
-            //Fix NPE
-            Description suiteDescription = Description.createSuiteDescription(suiteName);
-            testSuiteStarted(suiteDescription, suiteName, scenarioName);
+            testSuiteStarted(suiteName);
         }
         return getSuites().get(suiteName);
     }
