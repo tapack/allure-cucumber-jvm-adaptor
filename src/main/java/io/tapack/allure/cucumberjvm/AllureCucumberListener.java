@@ -18,7 +18,6 @@ import ru.yandex.qatools.allure.utils.AnnotationManager;
 
 import java.lang.annotation.Annotation;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,7 +28,7 @@ public class AllureCucumberListener extends RunListener {
 
     private Allure lifecycle = Allure.LIFECYCLE;
 
-    private final Map<String, String> suites = new ConcurrentHashMap<>();
+    private final Map<String, String> suites = new HashMap<>();
 
     /**
      * All tests object
@@ -39,6 +38,81 @@ public class AllureCucumberListener extends RunListener {
     @Override
     public void testRunStarted(Description description) {
         parentDescription = description;
+    }
+
+    @Override
+    public void testStarted(Description description) throws IllegalAccessException {
+        if (description.isSuite()) {
+            String methodName = description.getClassName();
+            //If it`s Scenario Outline, add example string to story name
+            if (methodName.startsWith("|")
+                    || description.getDisplayName().endsWith("|")) {
+                methodName = getScenarioOutlineName(description) + methodName;
+            }
+            methodName = methodName.replaceFirst("^(.*): ", "");
+            TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), methodName);
+            event.setTitle(methodName);
+
+            Stories story = getStoriesAnnotation(new String[]{methodName});
+
+            Collection<Annotation> annotations = new ArrayList<>();
+            for (Annotation annotation : description.getAnnotations()) {
+                annotations.add(annotation);
+            }
+
+            annotations.add(story);
+
+            AnnotationManager am = new AnnotationManager(annotations);
+            am.update(event);
+            getLifecycle().fire(event);
+        } else {
+            String stepName = extractMethodName(description);
+            getLifecycle().fire(new StepStartedEvent(stepName).withTitle(stepName));
+        }
+    }
+
+    @Override
+    public void testFailure(Failure failure) {
+        Throwable throwable = failure.getException();
+        if (failure.getDescription().isTest()) {
+            getLifecycle().fire(new StepFailureEvent().withThrowable(throwable));
+        } else {
+            // Produces additional failure step for all test case
+            if (throwable instanceof AssumptionViolatedException) {
+                getLifecycle().fire(new TestCaseCanceledEvent().withThrowable(throwable));
+            } else {
+                getLifecycle().fire(new TestCaseFailureEvent().withThrowable(throwable));
+            }
+        }
+    }
+
+    @Override
+    public void testAssumptionFailure(Failure failure) {
+        testFailure(failure);
+    }
+
+    @Override
+    public void testIgnored(Description description) throws IllegalAccessException {
+        if (description.isTest()) {
+            String stepName = extractMethodName(description);
+            getLifecycle().fire(new StepStartedEvent(stepName).withTitle(stepName));
+            getLifecycle().fire(new StepCanceledEvent());
+            getLifecycle().fire(new StepFinishedEvent());
+        } else {
+            getLifecycle().fire(new TestCasePendingEvent().withMessage(getIgnoredMessage(description)));
+        }
+    }
+
+    @Override
+    public void testFinished(Description description) throws IllegalAccessException {
+        if (description.isTest()) {
+            getLifecycle().fire(new StepFinishedEvent());
+        } else {
+            getLifecycle().fire(new TestCaseFinishedEvent());
+            if (isLastScenario(description)) {
+                getLifecycle().fire(new TestSuiteFinishedEvent(getSuiteUid(description)));
+            }
+        }
     }
 
     /**
@@ -123,13 +197,33 @@ public class AllureCucumberListener extends RunListener {
 
     }
 
-    private String findFeatureByScenario(Description scenario) throws IllegalAccessException {
-        String scenarioToFindName = scenario.getClassName();
-        String scenarioToFindId = scenarioToFindName;
-        Object scenarioToFindType = getTestEntityType(scenario);
-        if (scenarioToFindType instanceof Scenario) {
-            scenarioToFindId = ((Scenario) scenarioToFindType).getId();
+    private void testSuiteStarted(String suiteName) throws IllegalAccessException {
+        String uid = generateSuiteUid(suiteName);
+        //Create feature annotation. Remove unnecessary words from it
+        String featureName = suiteName.replaceFirst("^(.*): ", "");
+        Features feature = getFeaturesAnnotation(new String[]{featureName});
+        TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, featureName);
+        event.setTitle(featureName);
+        AnnotationManager am = new AnnotationManager(feature);
+        am.update(event);
+        event.withLabels(AllureModelUtils.createTestFrameworkLabel("CucumberJVM"));
+        getLifecycle().fire(event);
+    }
+
+    private String getScenarioOutlineName(Description description) throws IllegalAccessException {
+        Object testEntityType = getTestEntityType(description);
+        if (testEntityType instanceof Scenario) {
+            return ((Scenario) testEntityType).getName();
         }
+        return "Undefined Scenario Outline";
+    }
+
+    private boolean isLastScenario(Description description) throws IllegalAccessException {
+        return getLastScenarioIds().contains(getScenarioId(description));
+    }
+
+    private String findFeatureByScenario(Description scenario) throws IllegalAccessException {
+        String scenarioToFindId = getScenarioId(scenario);
 
         List<Description> testClasses = findTestClassesLevel(parentDescription.getChildren());
 
@@ -144,7 +238,6 @@ public class AllureCucumberListener extends RunListener {
 
                     //Scenario
                     if (scenarioType instanceof Scenario
-                            && story.getDisplayName().equals(scenarioToFindName)
                             && ((Scenario) scenarioType).getId().equals(scenarioToFindId)) {
                         return feature.getDisplayName();
 
@@ -153,11 +246,9 @@ public class AllureCucumberListener extends RunListener {
                         List<Description> examples = story.getChildren().get(0).getChildren();
                         // we need to go deeper :)
                         for (Description example : examples) {
-                            if (example.getDisplayName().equals(scenarioToFindName)) {
-                                Object exampleType = getTestEntityType(example);
-                                if (exampleType instanceof Scenario && ((Scenario) exampleType).getId().equals(scenarioToFindId)) {
-                                    return feature.getDisplayName();
-                                }
+                            Object exampleType = getTestEntityType(example);
+                            if (exampleType instanceof Scenario && ((Scenario) exampleType).getId().equals(scenarioToFindId)) {
+                                return feature.getDisplayName();
                             }
                         }
                     }
@@ -165,106 +256,6 @@ public class AllureCucumberListener extends RunListener {
             }
         }
         return "Feature: Undefined Feature";
-    }
-
-    private void testSuiteStarted(String suiteName) throws IllegalAccessException {
-        String uid = generateSuiteUid(suiteName);
-        //Create feature annotation. Remove unnecessary words from it
-        String featureName = suiteName.replaceFirst("^(.*): ", "");
-        Features feature = getFeaturesAnnotation(new String[]{featureName});
-        TestSuiteStartedEvent event = new TestSuiteStartedEvent(uid, featureName);
-        event.setTitle(featureName);
-        AnnotationManager am = new AnnotationManager(feature);
-        am.update(event);
-        event.withLabels(AllureModelUtils.createTestFrameworkLabel("CucumberJVM"));
-        getLifecycle().fire(event);
-    }
-
-    @Override
-    public void testStarted(Description description) throws IllegalAccessException {
-        if (description.isSuite()) {
-            String methodName = description.getClassName();
-            //If it`s Scenario Outline, add example string to story name
-            if (methodName.startsWith("|")
-                    || description.getDisplayName().endsWith("|")) {
-                methodName = getScenarioOutlineName(description) + methodName;
-            }
-            methodName = methodName.replaceFirst("^(.*): ", "");
-            TestCaseStartedEvent event = new TestCaseStartedEvent(getSuiteUid(description), methodName);
-            event.setTitle(methodName);
-
-            Stories story = getStoriesAnnotation(new String[]{methodName});
-
-            Collection<Annotation> annotations = new ArrayList<>();
-            for (Annotation annotation : description.getAnnotations()) {
-                annotations.add(annotation);
-            }
-
-            annotations.add(story);
-
-            AnnotationManager am = new AnnotationManager(annotations);
-            am.update(event);
-            getLifecycle().fire(event);
-        } else {
-            String stepName = extractMethodName(description);
-            getLifecycle().fire(new StepStartedEvent(stepName).withTitle(stepName));
-        }
-    }
-
-    @Override
-    public void testFailure(Failure failure) {
-        Throwable throwable = failure.getException();
-        if (failure.getDescription().isTest()) {
-            getLifecycle().fire(new StepFailureEvent().withThrowable(throwable));
-        } else {
-            // Produces additional failure step for all test case
-            if (throwable instanceof AssumptionViolatedException) {
-                getLifecycle().fire(new TestCaseCanceledEvent().withThrowable(throwable));
-            } else {
-                getLifecycle().fire(new TestCaseFailureEvent().withThrowable(throwable));
-            }
-        }
-    }
-
-    @Override
-    public void testAssumptionFailure(Failure failure) {
-        testFailure(failure);
-    }
-
-    @Override
-    public void testIgnored(Description description) throws IllegalAccessException {
-        if (description.isTest()) {
-            String stepName = extractMethodName(description);
-            getLifecycle().fire(new StepStartedEvent(stepName).withTitle(stepName));
-            getLifecycle().fire(new StepCanceledEvent());
-            getLifecycle().fire(new StepFinishedEvent());
-        } else {
-            getLifecycle().fire(new TestCasePendingEvent().withMessage(getIgnoredMessage(description)));
-        }
-    }
-
-    @Override
-    public void testFinished(Description description) throws IllegalAccessException {
-        if (description.isTest()) {
-            getLifecycle().fire(new StepFinishedEvent());
-        } else {
-            getLifecycle().fire(new TestCaseFinishedEvent());
-            if (isLastScenario(description)) {
-                getLifecycle().fire(new TestSuiteFinishedEvent(getSuiteUid(description)));
-            }
-        }
-    }
-
-    private String getScenarioOutlineName(Description description) throws IllegalAccessException {
-        Object testEntityType = getTestEntityType(description);
-        if (testEntityType instanceof Scenario) {
-            return ((Scenario) testEntityType).getName();
-        }
-        return "Undefined Scenario Outline";
-    }
-
-    private boolean isLastScenario(Description description) throws IllegalAccessException {
-        return getLastScenarioIds().contains(getScenarioId(description));
     }
 
     private List<String> getLastScenarioIds() throws IllegalAccessException {
