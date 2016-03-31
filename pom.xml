@@ -1,15 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.tapack</groupId>
     <artifactId>allure-cucumber-jvm-adaptor</artifactId>
-    <version>0.2-SNAPSHOT</version>
+    <version>0.2</version>
 
     <name>Allure Cucumber-JVM Adaptor</name>
     <description>
-        This adaptor allows to generate allure xml reports after cucumber-jvm Junit test execution. (Scenario -> Test)
+        This adaptor allows to generate allure xml reports after cucumber-jvm Junit test execution. (Scenario -&gt; Test)
     </description>
     <url>https://github.com/tapack/allure-cucumber-jvm-adaptor</url>
 
@@ -25,7 +24,7 @@
         <url>https://github.com/tapack/allure-cucumber-jvm-adaptor</url>
         <connection>scm:git@github.com:tapack/allure-cucumber-jvm-adaptor.git</connection>
         <developerConnection>scm:git:git@github.com:tapack/allure-cucumber-jvm-adaptor.git</developerConnection>
-        <tag>HEAD</tag>
+        <tag>allure-cucumber-jvm-adaptor-0.2</tag>
     </scm>
 
     <issueManagement>
